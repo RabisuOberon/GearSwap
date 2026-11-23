@@ -20,7 +20,8 @@
 -- Commands for Trust "Command" gambits (quiet and idempotent, so repeated firing does nothing extra):
 --   gs c trust set <State> <value>     e.g. //gs c trust set DefenseMode Physical
 --   gs c trust reset <State>           e.g. //gs c trust reset DefenseMode
---   gs c trust on | off                mark Trust as running / stopped
+--   gs c trust on | off                mark Trust as running / stopped (always prints the result)
+--   gs c trust status                  show whether GearSwap thinks Trust is driving
 -------------------------------------------------------------------------------------------------------------------
 
 state.TrustMode = M(false, 'Trust Mode')
@@ -136,10 +137,17 @@ end
 -------------------------------------------------------------------------------------------------------------------
 -- Hooks
 -------------------------------------------------------------------------------------------------------------------
-local function set_trust_mode(on, reason)
-	if state.TrustMode.value == on then return end
+local function report_trust_mode(reason)
+	add_to_chat(122, 'GearSwap: Trust ' .. (state.TrustMode.value and 'is driving, Sel automation deferred' or 'stopped, Sel automation active') .. (reason and (' (' .. reason .. ')') or '') .. '.')
+end
+
+local function set_trust_mode(on, reason, always_report)
+	if state.TrustMode.value == on then
+		if always_report then report_trust_mode(reason) end
+		return
+	end
 	state.TrustMode:set(on)
-	add_to_chat(122, 'GearSwap: Trust ' .. (on and 'is driving, Sel automation deferred' or 'stopped, Sel automation active') .. (reason and (' (' .. reason .. ')') or '') .. '.')
+	report_trust_mode(reason)
 end
 
 local previous_extra_user_setup = extra_user_setup
@@ -195,7 +203,11 @@ function user_self_command(commandArgs, eventArgs)
 
 	local sub = (commandArgs[2] or ''):lower()
 	if sub == 'on' or sub == 'off' then
-		set_trust_mode(sub == 'on', 'gs c trust ' .. sub)
+		set_trust_mode(sub == 'on', 'gs c trust ' .. sub, true)
+		return
+	end
+	if sub == 'status' or sub == '' then
+		report_trust_mode('compat loaded; dummy songs: ' .. (next(trust_dummy_songs) and 'yes' or 'none'))
 		return
 	end
 
@@ -228,6 +240,8 @@ function user_state_change(stateField, newValue, oldValue)
 		add_to_chat(122, 'GearSwap: Sel automation ' .. (newValue and 'deferred to Trust.' or 'active.'))
 	end
 end
+
+add_to_chat(122, 'GearSwap: Trust compatibility loaded (gs c trust status).')
 
 -- Trust prints "Trust: GeneralTrustCommands Trust started/stopped" for start, stop, toggle, the UI toggle and startall.
 windower.raw_register_event('incoming text', function(original)
