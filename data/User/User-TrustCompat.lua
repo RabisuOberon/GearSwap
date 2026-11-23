@@ -13,7 +13,7 @@
 --
 -- How GearSwap knows Trust is running (state.TrustMode):
 --   on  : "// trust start", "// trust toggle", the Trust on-screen toggle, "// trust startall" from another box,
---         or loading a job listed in trust_autostart_jobs (set per character, see below).
+--         or Trust finishing loading on a job listed in trust_autostart_jobs (set per character, see below).
 --   off : "// trust stop", zoning, dying, changing job (Trust stops/unloads in all of those by default).
 --   manual override: gs c set TrustMode on|off  (e.g. after "// lua unload trust")
 --
@@ -26,8 +26,9 @@
 state.TrustMode = M(false, 'Trust Mode')
 
 -- Per-character settings go in your Data/<Name>/<Name>-Globals.lua (loaded after this file), e.g.:
---   trust_autostart_jobs = S{'PUP'}   -- jobs where Trust starts itself on load (Trust "Auto Enable Mode" = Auto);
---                                      -- Trust prints no message then, so GearSwap is told here.
+--   trust_autostart_jobs = S{'PUP'}   -- jobs where Trust starts itself when it loads (Trust "Auto Enable Mode" = Auto).
+--                                      -- Trust prints no "started" message then, so GearSwap watches for its
+--                                      -- "Trust is up to date" load message on these jobs instead.
 --   trust_dummy_songs_fallback = {"Goblin Gavotte", "Scop's Operetta"}  -- BRD: only used if Trust's file can't be read.
 
 -- Sel states that are treated as off ONLY while Sel is deciding something (tick, pretarget, precast) and
@@ -170,8 +171,6 @@ function extra_user_setup()
 	end
 
 	load_trust_dummy_songs()
-	local auto = trust_autostart_jobs
-	if type(auto) == 'table' and auto[player.main_job] then set_trust_mode(true, 'Trust auto-starts on ' .. player.main_job) end
 end
 
 local previous_extra_user_precast = extra_user_precast
@@ -232,7 +231,14 @@ end
 
 -- Trust prints "Trust: GeneralTrustCommands Trust started/stopped" for start, stop, toggle, the UI toggle and startall.
 windower.raw_register_event('incoming text', function(original)
-	if type(original) ~= 'string' or not original:find('GeneralTrustCommands', 1, true) then return end
+	if type(original) ~= 'string' then return end
+	-- Trust finished loading; with Auto Enable Mode = Auto it has just started itself.
+	if original:find('Trust is up to date (', 1, true) then
+		local auto = trust_autostart_jobs
+		if type(auto) == 'table' and player and auto[player.main_job] then set_trust_mode(true, 'Trust auto-started on ' .. player.main_job) end
+		return
+	end
+	if not original:find('GeneralTrustCommands', 1, true) then return end
 	if original:find('Trust started', 1, true) then
 		set_trust_mode(true)
 	elseif original:find('Trust stopped', 1, true) then
