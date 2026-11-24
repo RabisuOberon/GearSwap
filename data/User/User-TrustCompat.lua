@@ -139,6 +139,8 @@ end
 -------------------------------------------------------------------------------------------------------------------
 -- Hooks
 -------------------------------------------------------------------------------------------------------------------
+local zone_name, zone_modeset, trust_has_modeset -- defined with the zone mode sets below
+
 local function report_trust_mode(reason)
 	add_to_chat(122, 'GearSwap: Trust ' .. (state.TrustMode.value and 'is driving, Sel automation deferred' or 'stopped, Sel automation active') .. (reason and (' (' .. reason .. ')') or '') .. '.')
 end
@@ -209,7 +211,12 @@ function user_self_command(commandArgs, eventArgs)
 		return
 	end
 	if sub == 'status' or sub == '' then
-		report_trust_mode('compat loaded; dummy songs: ' .. (next(trust_dummy_songs) and 'yes' or 'none'))
+		local info = windower.ffxi.get_info()
+		local zone = info and info.zone
+		local set = zone_modeset(zone)
+		report_trust_mode('compat loaded; dummy songs: ' .. (next(trust_dummy_songs) and 'yes' or 'none') ..
+			'; zone ' .. zone_name(zone) .. ' (' .. tostring(zone) .. ')' ..
+			(set and ('; zone mode set ' .. set .. (trust_has_modeset(set) and '' or ' (not in this job\'s Trust modes file)')) or '; no zone mode set'))
 		return
 	end
 
@@ -276,7 +283,7 @@ local DEFAULT_ZONE_MODESETS = {
 	[189] = 'Sortie', -- Outer Ra'Kaznar [U3]
 }
 
-local function trust_has_modeset(name)
+function trust_has_modeset(name)
 	if not (io and io.open and windower.addon_path and player and player.main_job) then return false end
 	for _, dir in ipairs({'trust', 'Trust'}) do
 		local ok, f = pcall(io.open, windower.addon_path .. '../' .. dir .. '/data/modes/' .. player.main_job .. '_' .. player.name .. '.lua', 'r')
@@ -289,10 +296,23 @@ local function trust_has_modeset(name)
 	return false
 end
 
-local function zone_modeset(zone_id)
+-- Also matched by zone name, in case the ids differ: any "Outer Ra'Kaznar [U...]" zone is Sortie.
+local DEFAULT_ZONE_NAME_MODESETS = {["Outer Ra'Kaznar [U"] = 'Sortie'}
+
+function zone_name(zone_id)
+	local zone = zone_id and res and res.zones and res.zones[zone_id]
+	return zone and zone.en or tostring(zone_id)
+end
+
+function zone_modeset(zone_id)
+	if not zone_id then return nil end
 	local map = rawget(_G, 'trust_zone_modesets')
-	if type(map) ~= 'table' then map = DEFAULT_ZONE_MODESETS end
-	return zone_id and map[zone_id]
+	if type(map) == 'table' then return map[zone_id] end
+	if DEFAULT_ZONE_MODESETS[zone_id] then return DEFAULT_ZONE_MODESETS[zone_id] end
+	local name = zone_name(zone_id)
+	for prefix, set in pairs(DEFAULT_ZONE_NAME_MODESETS) do
+		if name:sub(1, #prefix) == prefix then return set end
+	end
 end
 
 local function load_zone_modeset(new_id, old_id)
