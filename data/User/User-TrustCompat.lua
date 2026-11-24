@@ -259,6 +259,13 @@ windower.raw_register_event('incoming text', function(original)
 	if original:find('Trust is up to date (', 1, true) then
 		local auto = trust_autostart_jobs
 		if type(auto) == 'table' and player and auto[player.main_job] then set_trust_mode(true, 'Trust auto-started on ' .. player.main_job) end
+		-- Reloaded inside a zone that has a mode set (e.g. "lua reload trust" in Sortie): Trust is back on Default.
+		local info = windower.ffxi.get_info()
+		local set = info and zone_modeset(info.zone)
+		if set and set ~= 'Default' and trust_has_modeset(set) then
+			add_to_chat(122, 'GearSwap: Trust reloaded in ' .. zone_name(info.zone) .. ', loading mode set "' .. set .. '".')
+			send_command('wait 2; trust load ' .. set)
+		end
 		return
 	end
 	if not original:find('GeneralTrustCommands', 1, true) then return end
