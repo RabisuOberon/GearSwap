@@ -22,6 +22,8 @@
 --   gs c trust reset <State>           e.g. //gs c trust reset DefenseMode
 --   gs c trust on | off                mark Trust as running / stopped (always prints the result)
 --   gs c trust status                  show whether GearSwap thinks Trust is driving
+--
+-- Zone mode sets: entering Sortie loads Trust's "Sortie" mode set, leaving loads "Default" (see bottom of file).
 -------------------------------------------------------------------------------------------------------------------
 
 state.TrustMode = M(false, 'Trust Mode')
@@ -260,8 +262,57 @@ windower.raw_register_event('incoming text', function(original)
 	end
 end)
 
+-------------------------------------------------------------------------------------------------------------------
+-- Zone mode sets: load a Trust mode set when you enter a zone, and Default again when you leave it.
+-- Trust can't do this itself (it turns off when you zone, so its zone-change reactions never fire).
+-- Only loads a mode set that exists in this job's Trust modes file (trust/data/modes/<JOB>_<Name>.lua),
+-- so jobs without a "Sortie" mode set are left alone. Override in <Name>-Globals.lua, e.g.
+--   trust_zone_modesets = {[275] = 'Sortie'}     -- zone id -> mode set; {} turns this off
+--   trust_zone_modeset_delay = 5                  -- seconds after zoning before loading
+-------------------------------------------------------------------------------------------------------------------
+local DEFAULT_ZONE_MODESETS = {
+	[275] = 'Sortie', -- Outer Ra'Kaznar [U1]
+	[133] = 'Sortie', -- Outer Ra'Kaznar [U2]
+	[189] = 'Sortie', -- Outer Ra'Kaznar [U3]
+}
+
+local function trust_has_modeset(name)
+	if not (io and io.open and windower.addon_path and player and player.main_job) then return false end
+	for _, dir in ipairs({'trust', 'Trust'}) do
+		local ok, f = pcall(io.open, windower.addon_path .. '../' .. dir .. '/data/modes/' .. player.main_job .. '_' .. player.name .. '.lua', 'r')
+		if ok and f then
+			local text = f:read('*a')
+			f:close()
+			return text:find('["' .. name .. '"]', 1, true) ~= nil
+		end
+	end
+	return false
+end
+
+local function zone_modeset(zone_id)
+	local map = rawget(_G, 'trust_zone_modesets')
+	if type(map) ~= 'table' then map = DEFAULT_ZONE_MODESETS end
+	return zone_id and map[zone_id]
+end
+
+local function load_zone_modeset(new_id, old_id)
+	local entering, leaving = zone_modeset(new_id), zone_modeset(old_id)
+	local name = entering or (leaving and 'Default')
+	if not name or entering == leaving then return end
+	if not trust_has_modeset(name) then
+		add_to_chat(122, 'GearSwap: no Trust "' .. name .. '" mode set for ' .. player.main_job .. ', not loading it.')
+		return
+	end
+	local delay = tonumber(rawget(_G, 'trust_zone_modeset_delay')) or 5
+	add_to_chat(122, 'GearSwap: loading Trust mode set "' .. name .. '" in ' .. delay .. 's.')
+	send_command('wait ' .. delay .. '; trust load ' .. name)
+end
+
 -- Trust stops on zone (Auto Disable Mode = Auto in all your profiles) and unloads on death by default.
-windower.raw_register_event('zone change', function() set_trust_mode(false, 'zoned') end)
+windower.raw_register_event('zone change', function(new_id, old_id)
+	set_trust_mode(false, 'zoned')
+	load_zone_modeset(new_id, old_id)
+end)
 windower.raw_register_event('status change', function(new_status)
 	if new_status == 2 or new_status == 3 then set_trust_mode(false, 'KO') end
 end)
